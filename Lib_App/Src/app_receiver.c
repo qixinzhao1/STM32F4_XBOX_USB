@@ -1,9 +1,10 @@
 #include "app_receiver.h"
 #include "gamepad_stream.h"
-#include "project_config.h"
 #include "uart_transport.h"
 #include "usb_host.h"
 #include "vofa.h"
+
+#define APP_USB_PROCESS_TICKS UINT32_C(1)
 
 volatile app_diag_t g_v_app_diag;
 static app_resources_t s_resources;
@@ -62,7 +63,7 @@ void App_gamepad_entry(void *p_argument)
     /* 保持 Core 状态推进；USB 端点自身的 2ms 轮询不由 UART 定时替代。 */
     for (;;) {
         (void)Usb_host_Process();
-        (void)osDelay(PROJECT_USB_PROCESS_TICKS);
+        (void)osDelay(APP_USB_PROCESS_TICKS);
     }
 }
 
@@ -72,7 +73,7 @@ void App_transmit_entry(void *p_argument)
     (void)p_argument;
     for (;;) {
         uint32_t flags = osEventFlagsWait(s_resources.events,
-                                         PROJECT_EVENT_WORK | PROJECT_EVENT_LINK_TICK,
+                                         GAMEPAD_NOTIFY_WORK | GAMEPAD_NOTIFY_LINK_TICK,
                                          osFlagsWaitAny, osWaitForever);
         gamepad_message_t message;
         uint8_t sent = 0U;
@@ -110,7 +111,7 @@ app_receiver_err_t App_receiver_NotifyTick(void)
         return APP_RECEIVER_ERR_INIT;
     }
     /* 定时器服务任务不等待锁、USB 枚举或 DMA 完成。 */
-    if ((osEventFlagsSet(s_resources.events, PROJECT_EVENT_LINK_TICK) & osFlagsError) != 0U) {
+    if ((osEventFlagsSet(s_resources.events, GAMEPAD_NOTIFY_LINK_TICK) & osFlagsError) != 0U) {
         return APP_RECEIVER_ERR_EVENT;
     }
     return APP_RECEIVER_ERR_OK;

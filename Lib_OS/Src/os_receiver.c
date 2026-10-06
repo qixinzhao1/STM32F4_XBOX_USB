@@ -1,8 +1,10 @@
 #include "os_receiver.h"
 #include "app_receiver.h"
 #include "gamepad_message.h"
-#include "project_config.h"
 #include "cmsis_os2.h"
+
+#define OS_RECEIVER_EVENT_READY       UINT32_C(0x01)
+#define OS_RECEIVER_LINK_PERIOD_TICKS UINT32_C(1)
 
 /* 只有此层引用生成资源，App/BSP 均从初始化参数获得句柄。 */
 extern osThreadId_t g_os_startupHandle;
@@ -46,7 +48,7 @@ static os_receiver_err_t _wait_ready(void)
         return OS_RECEIVER_ERR_RESOURCE;
     }
     /* 两个工作线程都要看到同一个 READY 状态。 */
-    if ((osEventFlagsWait(g_system_eventsHandle, PROJECT_EVENT_READY,
+    if ((osEventFlagsWait(g_system_eventsHandle, OS_RECEIVER_EVENT_READY,
                          osFlagsWaitAll | osFlagsNoClear, osWaitForever) & osFlagsError) != 0U) {
         return OS_RECEIVER_ERR_RESOURCE;
     }
@@ -66,9 +68,9 @@ void Os_startup_entry(void *p_argument)
         resources.events = g_system_eventsHandle;
         if (App_receiver_Init(&resources) != APP_RECEIVER_ERR_OK) {
             err = OS_RECEIVER_ERR_INIT;
-        } else if (osTimerStart(g_link_tickHandle, PROJECT_LINK_PERIOD_TICKS) != osOK) {
+        } else if (osTimerStart(g_link_tickHandle, OS_RECEIVER_LINK_PERIOD_TICKS) != osOK) {
             err = OS_RECEIVER_ERR_TIMER;
-        } else if ((osEventFlagsSet(g_system_eventsHandle, PROJECT_EVENT_READY) & osFlagsError) != 0U) {
+        } else if ((osEventFlagsSet(g_system_eventsHandle, OS_RECEIVER_EVENT_READY) & osFlagsError) != 0U) {
             err = OS_RECEIVER_ERR_RESOURCE;
         }
     }

@@ -1,8 +1,9 @@
 #include "uart_transport.h"
-#include "project_config.h"
 #include "usart.h"
 
 #include <string.h>
+
+#define UART_TRANSPORT_WAIT_TICKS UINT32_C(20)
 
 static osMutexId_t s_tx_mutex;
 static osSemaphoreId_t s_tx_done;
@@ -58,7 +59,7 @@ uart_transport_err_t Uart_transport_Send(const uint8_t *p_frame, size_t c_length
         return UART_TRANSPORT_ERR_LENGTH;
     }
     if ((s_tx_mutex == NULL) || (s_tx_done == NULL) ||
-        (osMutexAcquire(s_tx_mutex, PROJECT_UART_WAIT_TICKS) != osOK)) {
+        (osMutexAcquire(s_tx_mutex, UART_TRANSPORT_WAIT_TICKS) != osOK)) {
         return UART_TRANSPORT_ERR_RESOURCE;
     }
     /* 丢弃旧通知，缓冲区由当前线程持有到 UART 最后一个停止位发完。 */
@@ -68,7 +69,7 @@ uart_transport_err_t Uart_transport_Send(const uint8_t *p_frame, size_t c_length
     s_v_tx_error = 0U;
     if (HAL_UART_Transmit_DMA(&huart1, s_tx_buffer, VOFA_FRAME_SIZE) != HAL_OK) {
         err = UART_TRANSPORT_ERR_HAL;
-    } else if (osSemaphoreAcquire(s_tx_done, PROJECT_UART_WAIT_TICKS) != osOK) {
+    } else if (osSemaphoreAcquire(s_tx_done, UART_TRANSPORT_WAIT_TICKS) != osOK) {
         (void)HAL_UART_AbortTransmit(&huart1);
         err = UART_TRANSPORT_ERR_TIMEOUT;
     } else if (s_v_tx_error != 0U) {

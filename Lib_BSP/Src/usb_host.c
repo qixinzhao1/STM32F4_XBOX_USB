@@ -1,5 +1,4 @@
 #include "usb_host.h"
-#include "project_config.h"
 #include "usb_otg.h"
 #include "usbh_core.h"
 #include "usbh_ctlreq.h"
@@ -73,10 +72,10 @@ static usb_host_err_t _publish(const gamepad_message_t *p_message)
         g_v_usb_host_diag.queue_drops++;
         g_v_usb_host_diag.last_error = USB_HOST_ERR_QUEUE;
         __set_PRIMASK(irq_mask);
-        (void)osEventFlagsSet(s_events, PROJECT_EVENT_WORK);
+        (void)osEventFlagsSet(s_events, GAMEPAD_NOTIFY_WORK);
         return USB_HOST_ERR_QUEUE;
     }
-    (void)osEventFlagsSet(s_events, PROJECT_EVENT_WORK);
+    (void)osEventFlagsSet(s_events, GAMEPAD_NOTIFY_WORK);
     return USB_HOST_ERR_OK;
 }
 
@@ -241,13 +240,45 @@ static USBH_StatusTypeDef _class_deinit(USBH_HandleTypeDef *p_host)
     return USBH_OK;
 }
 
-/* @brief 按真实接口和端点配置 Xbox 类，不使用 HID Boot 请求。
+/* @brief 严格验证 Xbox 360 输入接口，不以 VID/PID 或通配类码识别。
+ * @param p_interface 已解析的接口描述符，不能为空。
+ * @return 1 表示默认设置的 FF/5D/01 接口及双中断端点可用。 */
+static uint8_t _interface_valid(const USBH_InterfaceDescTypeDef *p_interface)
+{
+    uint8_t directions = 0U;
+    if ((p_interface == NULL) || (p_interface->bLength != USB_INTERFACE_DESC_SIZE) ||
+        (p_interface->bInterfaceClass != 0xFFU) ||
+        (p_interface->bInterfaceSubClass != 0x5DU) ||
+        (p_interface->bInterfaceProtocol != 0x01U) ||
+        (p_interface->bAlternateSetting != 0U) || (p_interface->bNumEndpoints != 2U)) {
+        return 0U;
+    }
+    /* 分配前验证方向唯一，错误描述符不能覆盖通道或造成泄漏。 */
+    for (uint8_t i = 0U; i < p_interface->bNumEndpoints; ++i) {
+        const USBH_EpDescTypeDef *p_endpoint = &p_interface->Ep_Desc[i];
+        uint8_t direction = ((p_endpoint->bEndpointAddress & 0x80U) != 0U) ? 1U : 2U;
+        if (((directions & direction) != 0U) ||
+            ((p_endpoint->bmAttributes & 3U) != USBH_EP_INTERRUPT) ||
+            ((p_endpoint->bEndpointAddress & 0x0FU) == 0U) ||
+            ((p_endpoint->bEndpointAddress & 0x70U) != 0U) ||
+            (p_endpoint->wMaxPacketSize == 0U) ||
+            (p_endpoint->wMaxPacketSize > GAMEPAD_USB_PAYLOAD_SIZE) ||
+            (p_endpoint->bInterval == 0U) ||
+            ((direction == 1U) && (p_endpoint->wMaxPacketSize < XBOX_INPUT_REPORT_SIZE))) {
+            return 0U;
+        }
+        directions |= direction;
+    }
+    return (directions == 3U) ? 1U : 0U;
+}
+
+/* @brief 从复合设备中查找可用的 Xbox 接口并配置真实端点。
  * @param p_host 已枚举的 Core 句柄，不能为空。
  * @return SDK 固定 ABI 状态。 */
 static USBH_StatusTypeDef _class_init(USBH_HandleTypeDef *p_host)
 {
-    USBH_InterfaceDescTypeDef *p_interface;
-    uint8_t directions = 0U;
+    USBH_InterfaceDescTypeDef *p_interface = NULL;
+    uint8_t interface_index = USB_HOST_PIPE_NONE;
     if ((_host_validate(p_host) != USB_HOST_ERR_OK)) {
         return USBH_FAIL;
     }
@@ -257,50 +288,32 @@ static USBH_StatusTypeDef _class_init(USBH_HandleTypeDef *p_host)
     g_v_usb_host_diag.vendor = p_host->device.DevDesc.idVendor;
     g_v_usb_host_diag.product = p_host->device.DevDesc.idProduct;
     g_v_usb_host_diag.declared_power_ma = (uint16_t)((uint16_t)p_host->device.CfgDesc.bMaxPower * 2U);
-    p_interface = &p_host->device.CfgDesc.Itf_Desc[0];
-    if ((p_host->device.DevDesc.idVendor != PROJECT_USB_VID) ||
-        (p_host->device.DevDesc.idProduct != PROJECT_USB_PID) ||
-        (p_host->device.speed != USBH_SPEED_FULL) ||
-        (p_host->device.CfgDesc.bNumInterfaces != 1U) ||
-        (p_interface->bInterfaceClass != 0xFFU) ||
-        (p_interface->bInterfaceSubClass != 0x5DU) ||
-        (p_interface->bInterfaceProtocol != 0x01U) ||
-        (p_interface->bAlternateSetting != 0U) || (p_interface->bNumEndpoints != 2U)) {
+    g_v_usb_host_diag.interface_number = USB_HOST_PIPE_NONE;
+    g_v_usb_host_diag.in_endpoint = 0U;
+    g_v_usb_host_diag.out_endpoint = 0U;
+    g_v_usb_host_diag.max_packet = 0U;
+    g_v_usb_host_diag.interval_ms = 0U;
+    if (p_host->device.speed != USBH_SPEED_FULL) {
         _invalidate(USB_HOST_ERR_DEVICE);
         return USBH_FAIL;
     }
-    (void)USBH_SelectInterface(p_host, 0U);
-    /* 分配前验证方向唯一，错误描述符不能覆盖已分配通道而造成泄漏。 */
-    for (uint8_t i = 0U; i < 2U; ++i) {
-        USBH_EpDescTypeDef *p_endpoint = &p_interface->Ep_Desc[i];
-        uint8_t direction = ((p_endpoint->bEndpointAddress & 0x80U) != 0U) ? 1U : 2U;
-        if ((directions & direction) != 0U) {
-            _invalidate(USB_HOST_ERR_DEVICE);
-            return USBH_FAIL;
+    /* FF 是 ST FindInterface 的通配值，因此逐槽严格校验真实类码。 */
+    for (uint8_t i = 0U; i < USBH_MAX_NUM_INTERFACES; ++i) {
+        if (_interface_valid(&p_host->device.CfgDesc.Itf_Desc[i]) != 0U) {
+            interface_index = i;
+            p_interface = &p_host->device.CfgDesc.Itf_Desc[i];
+            break;
         }
-        if ((direction == 1U) && (p_endpoint->wMaxPacketSize < XBOX_INPUT_REPORT_SIZE)) {
-            _invalidate(USB_HOST_ERR_DEVICE);
-            return USBH_FAIL;
-        }
-        directions |= direction;
     }
-    if (directions != 3U) {
+    if ((p_interface == NULL) || (USBH_SelectInterface(p_host, interface_index) != USBH_OK)) {
         _invalidate(USB_HOST_ERR_DEVICE);
         return USBH_FAIL;
     }
+    g_v_usb_host_diag.interface_number = p_interface->bInterfaceNumber;
     /* 数据端点必须来自实际描述符，不能把 Windows 的 IG_01 当 USB HID。 */
-    for (uint8_t i = 0U; i < 2U; ++i) {
+    for (uint8_t i = 0U; i < p_interface->bNumEndpoints; ++i) {
         USBH_EpDescTypeDef *p_endpoint = &p_interface->Ep_Desc[i];
         uint8_t pipe;
-        if (((p_endpoint->bmAttributes & 3U) != USBH_EP_INTERRUPT) ||
-            ((p_endpoint->bEndpointAddress & 0x0FU) == 0U) ||
-            (p_endpoint->wMaxPacketSize == 0U) ||
-            (p_endpoint->wMaxPacketSize > GAMEPAD_USB_PAYLOAD_SIZE) ||
-            (p_endpoint->bInterval == 0U)) {
-            (void)_class_deinit(p_host);
-            _invalidate(USB_HOST_ERR_DEVICE);
-            return USBH_FAIL;
-        }
         pipe = USBH_AllocPipe(p_host, p_endpoint->bEndpointAddress);
         if (pipe >= USB_HOST_PIPE_COUNT) {
             (void)_class_deinit(p_host);

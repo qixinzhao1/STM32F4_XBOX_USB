@@ -40,7 +40,6 @@ targets:
         - Lib_Mid/Inc
         - Lib_BSP/Inc
         - Lib_BSP/ThirdParty/USBHost/Core/Inc
-        - Config
       libList: []
     excludeList: []
     settings:
@@ -119,7 +118,6 @@ targets:
         - Lib_Mid/Inc
         - Lib_BSP/Inc
         - Lib_BSP/ThirdParty/USBHost/Core/Inc
-        - Config
       libList: []
     excludeList: []
     settings: {}

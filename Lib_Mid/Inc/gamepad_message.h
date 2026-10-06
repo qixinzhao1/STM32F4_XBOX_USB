@@ -5,6 +5,10 @@
 
 #define GAMEPAD_USB_PAYLOAD_SIZE 64U
 
+/* 共用事件对象的消息/节拍通知位；0x01 由启动层保留给 READY。 */
+#define GAMEPAD_NOTIFY_WORK      UINT32_C(0x02)
+#define GAMEPAD_NOTIFY_LINK_TICK UINT32_C(0x04)
+
 /* USB 原始数据与连接事件；事件不代表已经通过 Xbox 输入报告解析。 */
 typedef enum gamepad_event_e {
     GAMEPAD_EVENT_INPUT = 1,

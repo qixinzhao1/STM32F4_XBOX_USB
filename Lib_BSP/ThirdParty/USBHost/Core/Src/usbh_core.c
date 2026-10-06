@@ -302,7 +302,9 @@ USBH_StatusTypeDef USBH_SelectInterface(USBH_HandleTypeDef *phost, uint8_t inter
 {
   USBH_StatusTypeDef status = USBH_OK;
 
-  if (interface < phost->device.CfgDesc.bNumInterfaces)
+  /* Parsed slots include alternate settings, not just unique interface numbers. */
+  if ((interface < USBH_MAX_NUM_INTERFACES) &&
+      (phost->device.CfgDesc.Itf_Desc[interface].bLength == USB_INTERFACE_DESC_SIZE))
   {
     phost->device.current_interface = interface;
     USBH_UsrLog("Switching to Interface (#%d)", interface);
@@ -355,7 +357,8 @@ uint8_t USBH_FindInterface(USBH_HandleTypeDef *phost, uint8_t Class, uint8_t Sub
   while (if_ix < USBH_MAX_NUM_INTERFACES)
   {
     pif = &pcfg->Itf_Desc[if_ix];
-    if (((pif->bInterfaceClass == Class) || (Class == 0xFFU)) &&
+    if ((pif->bLength == USB_INTERFACE_DESC_SIZE) &&
+        ((pif->bInterfaceClass == Class) || (Class == 0xFFU)) &&
         ((pif->bInterfaceSubClass == SubClass) || (SubClass == 0xFFU)) &&
         ((pif->bInterfaceProtocol == Protocol) || (Protocol == 0xFFU)))
     {
@@ -388,13 +391,43 @@ uint8_t USBH_FindInterfaceIndex(USBH_HandleTypeDef *phost, uint8_t interface_num
   while (if_ix < USBH_MAX_NUM_INTERFACES)
   {
     pif = &pcfg->Itf_Desc[if_ix];
-    if ((pif->bInterfaceNumber == interface_number) && (pif->bAlternateSetting == alt_settings))
+    if ((pif->bLength == USB_INTERFACE_DESC_SIZE) &&
+        (pif->bInterfaceNumber == interface_number) && (pif->bAlternateSetting == alt_settings))
     {
       return  if_ix;
     }
     if_ix++;
   }
   return 0xFFU;
+}
+
+
+/* Project adaptation: a gamepad can follow HID/audio/vendor interfaces.
+   Class Init still validates the complete protocol and selects its own interface. */
+static USBH_ClassTypeDef *USBH_FindClass(USBH_HandleTypeDef *phost)
+{
+  uint8_t if_ix;
+  uint8_t class_ix;
+
+  for (if_ix = 0U; if_ix < USBH_MAX_NUM_INTERFACES; if_ix++)
+  {
+    const USBH_InterfaceDescTypeDef *pif = &phost->device.CfgDesc.Itf_Desc[if_ix];
+    if ((pif->bLength != USB_INTERFACE_DESC_SIZE) || (pif->bAlternateSetting != 0U))
+    {
+      continue;
+    }
+    for (class_ix = 0U; (class_ix < phost->ClassNumber) &&
+         (class_ix < USBH_MAX_NUM_SUPPORTED_CLASS); class_ix++)
+    {
+      if ((phost->pClass[class_ix] != NULL) &&
+          (phost->pClass[class_ix]->ClassCode == pif->bInterfaceClass))
+      {
+        (void)USBH_SelectInterface(phost, if_ix);
+        return phost->pClass[class_ix];
+      }
+    }
+  }
+  return NULL;
 }
 
 
@@ -473,7 +506,6 @@ USBH_StatusTypeDef USBH_ReEnumerate(USBH_HandleTypeDef *phost)
 USBH_StatusTypeDef USBH_Process(USBH_HandleTypeDef *phost)
 {
   __IO USBH_StatusTypeDef status = USBH_FAIL;
-  uint8_t idx = 0U;
 
   /* check for Host pending port disconnect event */
   if (phost->device.is_disconnected == 1U)
@@ -669,16 +701,7 @@ USBH_StatusTypeDef USBH_Process(USBH_HandleTypeDef *phost)
       }
       else
       {
-        phost->pActiveClass = NULL;
-
-        for (idx = 0U; idx < USBH_MAX_NUM_SUPPORTED_CLASS; idx++)
-        {
-          if (phost->pClass[idx]->ClassCode == phost->device.CfgDesc.Itf_Desc[0].bInterfaceClass)
-          {
-            phost->pActiveClass = phost->pClass[idx];
-            break;
-          }
-        }
+        phost->pActiveClass = USBH_FindClass(phost);
 
         if (phost->pActiveClass != NULL)
         {

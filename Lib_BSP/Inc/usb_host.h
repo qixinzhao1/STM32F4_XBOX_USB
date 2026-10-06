@@ -36,7 +36,7 @@ typedef struct usb_host_diag_s {
     uint8_t in_endpoint;        /* 枚举获得的 IN 端点。 */
     uint8_t out_endpoint;       /* 枚举获得的 OUT 端点。 */
     uint8_t interval_ms;        /* FS 中断 IN 的轮询间隔。 */
-    uint8_t reserved;           /* 结构体对齐。 */
+    uint8_t interface_number;   /* 实际手柄接口编号；0xFF 表示未匹配。 */
     uint8_t last_data[GAMEPAD_USB_PAYLOAD_SIZE]; /* 最新原始报告，用于联机诊断。 */
 } usb_host_diag_t;
 

@@ -6,12 +6,13 @@
 #include <string.h>
 
 /* 单设备 Host Core；不创建第二套任务、队列或锁。 */
-#define USBH_MAX_NUM_ENDPOINTS         2U
-#define USBH_MAX_NUM_INTERFACES        1U
+/* 保存复合设备的接口（含 alternate setting）；运行时仍只接入一只手柄。 */
+#define USBH_MAX_NUM_ENDPOINTS         8U
+#define USBH_MAX_NUM_INTERFACES        8U
 #define USBH_MAX_NUM_CONFIGURATION     1U
 #define USBH_KEEP_CFG_DESCRIPTOR       1U
 #define USBH_MAX_NUM_SUPPORTED_CLASS   1U
-#define USBH_MAX_SIZE_CONFIGURATION    128U
+#define USBH_MAX_SIZE_CONFIGURATION    512U
 #define USBH_MAX_DATA_BUFFER           512U
 #define USBH_MAX_PIPES_NBR             8U
 #define USBH_DEBUG_LEVEL               0U
