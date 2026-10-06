@@ -1,7 +1,7 @@
 # F4_XBOX_USB：Xbox手柄数据转串口数据
 
-如果对大家有用，可以点点Star吗，求求了
-本工程针对天空星 STM32F407VET6和飞智冰原狼2，其他类xbox手柄自行测试，采用接收器直连 USB OTG_FS。F407 解析标准 Xbox 按键、摇杆和扳机，以 USART1 发送串口数据。只包含Xbox标准按键，不包含背键、陀螺仪和震动。
+如果对大家有用，可以点点Star:star::star::star:吗，求求了
+本工程针对天空星 STM32F407VET6和飞智冰原狼2，其他类xbox手柄自行测试，采用接收器直连 USB OTG_FS。F407 解析标准 Xbox 按键、摇杆和扳机，以 USART1 发送串口数据。只包含Xbox标准按键，不包含陀螺仪和震动。
 
 ## 分层与接入
 
@@ -15,8 +15,6 @@
 | Lib_Mid | `gamepad_stream.c` | 纯 C 状态清零、拒绝旧连接报告、等待新报告恢复 valid |
 | Lib_BSP | `usb_host.c` | HCD 回调、Host Core 适配、Xbox 厂商接口和非阻塞接收 |
 | Lib_BSP | `uart_transport.c` | 注册 UART 回调、现有锁/信号量、DMA 缓冲区生命周期 |
-
-没有修改 `main.c`、`freertos.c`、IRQ、外设初始化、HAL 或生成配置头文件。`.eide` 的两个目标增加了自定义目录、include 和 hook wrap 链接参数。
 
 所有应用 OS 对象都由CubeMX创建：三个任务、16×80 字节队列、互斥量、耗尽二值信号量、事件对象、周期定时器。
 
@@ -43,6 +41,9 @@ VOFA 参数：921600、8 数据位、Even、1 stop、无流控、JustFloat。
 
 ## 板上联机步骤
 
-1. 先核对接收器VBUS及UART接线。
+1. 使用type-C转Usb的转接头，把手柄接收器连接开发板，核对开发板UART1接线。
 2. VOFA按8E1+JustFloat打开对应串口；未收到有效输入时应看到valid=0和零值。
 3. 让手柄与接收器无线连接。
+
+
+部分代码使用codex编写
